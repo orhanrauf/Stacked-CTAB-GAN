@@ -321,7 +321,7 @@ class Classifier(Module):
     
     """
     
-    def __init__(self,input_dim, class_dims,st_ed):
+    def __init__(self, input_dim, class_dims,st_ed):
         super(Classifier,self).__init__()
         # subtracting the target column size from the input dimensionality 
         self.dim = input_dim-(st_ed[1]-st_ed[0])
@@ -404,6 +404,22 @@ class Generator(Module):
 
     def forward(self, input):
         return self.seq(input)
+
+class GeneratorSecondLayer(Module):
+    def __init__(self, input_dim, output_dim):
+        super(GeneratorSecondLayer, self).__init__()
+        self.seq = Sequential(
+            Linear(input_dim, input_dim),
+            LeakyReLU(0.2),
+            Dropout(0.5),
+            Linear(input_dim, input_dim),
+            LeakyReLU(0.2),
+            Dropout(0.5),
+            Linear(input_dim, output_dim),
+            LeakyReLU(0.2),
+            Dropout(0.5),
+        )
+    
 
 def determine_layers_disc(side, num_channels):
     
@@ -614,7 +630,7 @@ class StackedCTABGANSynthesizer:
             if i * i >= col_size_d:
                 self.dside = i
                 break
-        
+
         # obtaining the desired height/width for generating square images from the generator network that can be converted back to tabular domain 		
         sides = [4, 8, 16, 24, 32]
         col_size_g = data_dim
@@ -626,14 +642,9 @@ class StackedCTABGANSynthesizer:
         # constructing the generator and discriminator networks
         layers_G0 = determine_layers_gen(self.gside, self.random_dim+self.cond_generator.n_opt, self.num_channels)
         layers_G1 = determine_layers_gen(self.gside, col_size_g + self.cond_generator.n_opt, self.num_channels)
+
         layers_D0 = determine_layers_disc(self.dside, self.num_channels)
         layers_D1 = determine_layers_disc(self.dside, self.num_channels)
-        
-        
-        # print(layers_G0)
-        # print(layers_G1)
-        # print(layers_D0)
-        # print(layers_D1)
         
         self.generator0 = Generator(layers_G0).to(self.device)
         self.generator1 = Generator(layers_G1).to(self.device)
@@ -649,7 +660,6 @@ class StackedCTABGANSynthesizer:
         
         optimizerG1 = Adam(self.generator1.parameters(), **optimizer_params)
         optimizerD1 = Adam(discriminator1.parameters(), **optimizer_params)
-
        
         st_ed = None
         classifier=None
@@ -835,15 +845,12 @@ class StackedCTABGANSynthesizer:
                 # converting it into the tabular domain as per format of the trasformed training data
                 faket = self.Gtransformer.inverse_transform(fake)
                 # applying final activation on the generated data (i.e., tanh for numeric and gumbel-softmax for categorical)
-                fakeact = apply_activate(faket.detach(), self.transformer.output_info)
-                
-                print(fake.shape)
-                print(faket.shape)
-                print(fakeact.shape)
+                fakeact = apply_activate(faket, self.transformer.output_info)
+
                 # the generated data is then concatenated with the corresponding condition vectors 
-                fake_cat = torch.cat([fakeact.detach(), c0.detach()], dim=1)
+                fake_cat = torch.cat([fakeact, c0.detach()], dim=1)
                 # the real data is also similarly concatenated with corresponding conditional vectors    
-                real_cat = torch.cat([real.detach(), c_perm0.detach()], dim=1)
+                real_cat = torch.cat([real, c_perm0.detach()], dim=1)
                 
                 # transforming the real and synthetic data into the image domain for feeding it to the discriminator
                 real_cat_d = self.Dtransformer.transform(real_cat)
@@ -865,6 +872,9 @@ class StackedCTABGANSynthesizer:
                 
                 # computing the backward step to update weights of the discriminator
                 optimizerD1.step()
+
+
+
 
                 # similarly sample noise vectors and conditional vectors
                 input_second = torch.cat([fakeact0.detach(), c0], dim=1)

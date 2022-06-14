@@ -580,8 +580,7 @@ class CTABGANSynthesizer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.generator0 = None
-        self.generator1 = None
+        self.generator = None
 
     def fit(self, train_data=pd.DataFrame, categorical=[], mixed={}, type={}):
         
@@ -624,25 +623,17 @@ class CTABGANSynthesizer:
                 break
 		
         # constructing the generator and discriminator networks
-        layers_G0 = determine_layers_gen(self.gside, self.random_dim+self.cond_generator.n_opt, self.num_channels)
-        layers_G1 = determine_layers_gen(self.dside, len(self.transformer.meta) + self.cond_generator.n_opt, self.num_channels)
-        layers_D0 = determine_layers_disc(self.dside, self.num_channels)
-        layers_D1 = determine_layers_disc(self.dside, self.num_channels)
+        layers_G = determine_layers_gen(self.gside, self.random_dim+self.cond_generator.n_opt, self.num_channels)
+        layers_D = determine_layers_disc(self.dside, self.num_channels)
         
-        self.generator0 = Generator(layers_G0).to(self.device)
-        self.generator1 = Generator(layers_G0).to(self.device)
-        
-        discriminator0 = Discriminator(layers_D0).to(self.device)
-        discriminator1 = Discriminator(layers_D0).to(self.device)
+        self.generator = Generator(layers_G).to(self.device)
+        discriminator = Discriminator(layers_D).to(self.device)
         
         # assigning the respective optimizers for the generator and discriminator networks
         optimizer_params = dict(lr=2e-4, betas=(0.5, 0.9), eps=1e-3, weight_decay=self.l2scale)
         
-        optimizerG0 = Adam(self.generator0.parameters(), **optimizer_params)
-        optimizerD0 = Adam(discriminator0.parameters(), **optimizer_params)
-        
-        optimizerG1 = Adam(self.generator1.parameters(), **optimizer_params)
-        optimizerD1 = Adam(discriminator1.parameters(), **optimizer_params)
+        optimizerG = Adam(self.generator.parameters(), **optimizer_params)
+        optimizerD = Adam(discriminator.parameters(), **optimizer_params)
 
        
         st_ed = None
@@ -657,7 +648,7 @@ class CTABGANSynthesizer:
         
         # initializing learnable parameters of the discrimnator and generator networks  
         self.generator.apply(weights_init)
-        discriminator0.apply(weights_init)
+        discriminator.apply(weights_init)
 
         # initializing the image transformer objects for the generator and discriminator networks for transitioning between image and tabular domain 
         self.Gtransformer = ImageTransformer(self.gside)       
@@ -706,7 +697,7 @@ class CTABGANSynthesizer:
                 fake_cat_d = self.Dtransformer.transform(fake_cat)
 
                 # executing the gradient update step for the discriminator    
-                optimizerD0.zero_grad()
+                optimizerD.zero_grad()
                 # computing the probability of the discriminator to correctly classify real samples hence y_real should ideally be close to 1
                 y_real,_ = discriminator(real_cat_d)
                 # computing the probability of the discriminator to correctly classify fake samples hence y_fake should ideally be close to 0
@@ -718,7 +709,7 @@ class CTABGANSynthesizer:
                 loss_d.backward()
                 
                 # computing the backward step to update weights of the discriminator
-                optimizerD0.step()
+                optimizerD.step()
 
                 # similarly sample noise vectors and conditional vectors
                 noisez = torch.randn(self.batch_size, self.random_dim, device=self.device)
@@ -730,7 +721,7 @@ class CTABGANSynthesizer:
                 noisez =  noisez.view(self.batch_size,self.random_dim+self.cond_generator.n_opt,1,1)
 
                 # executing the gradient update step for the generator    
-                optimizerG0.zero_grad()
+                optimizerG.zero_grad()
 
                 # similarly generating synthetic data and applying final activation
                 fake = self.generator(noisez)
@@ -764,7 +755,7 @@ class CTABGANSynthesizer:
                 # computing the finally accumulated gradients
                 loss_info.backward()
                 # executing the backward step to update the weights
-                optimizerG0.step()
+                optimizerG.step()
 
                 # the classifier module is used in case there is a target column associated with ML tasks 
                 if problem_type:
