@@ -845,7 +845,7 @@ class StackedCTABGANSynthesizer:
                 # converting it into the tabular domain as per format of the trasformed training data
                 faket = self.Gtransformer.inverse_transform(fake)
                 # applying final activation on the generated data (i.e., tanh for numeric and gumbel-softmax for categorical)
-                fakeact = apply_activate(faket, self.transformer.output_info)
+                fakeact = apply_activate(faket.detach(), self.transformer.output_info)
 
                 # the generated data is then concatenated with the corresponding condition vectors 
                 fake_cat = torch.cat([fakeact, c0.detach()], dim=1)
