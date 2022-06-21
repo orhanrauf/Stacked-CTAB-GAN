@@ -6,7 +6,7 @@ import torch.optim as optim
 from torch.optim import Adam
 from torch.nn import functional as F
 from torch.nn import (Dropout, LeakyReLU, Linear, Module, ReLU, Sequential,
-Conv2d, ConvTranspose2d, BatchNorm2d, Sigmoid, init, BCELoss, CrossEntropyLoss,SmoothL1Loss)
+Conv2d, ConvTranspose2d, BatchNorm2d, Sigmoid, init, BCELoss, CrossEntropyLoss,SmoothL1Loss, BatchNorm1d)
 from model.synthesizer.transformer import ImageTransformer,DataTransformer
 from tqdm import tqdm
 
@@ -405,20 +405,41 @@ class Generator(Module):
     def forward(self, input):
         return self.seq(input)
 
+class Residual(Module):
+    """Residual layer for the CTGANSynthesizer."""
+
+    def __init__(self, i, o):
+        super(Residual, self).__init__()
+        self.fc = Linear(i, o)
+        self.bn = BatchNorm1d(o)
+        self.relu = ReLU()
+
+    def forward(self, input_):
+        """Apply the Residual layer to the `input_`."""
+        out = self.fc(input_)
+        out = self.bn(out)
+        out = self.relu(out)
+        return torch.cat([out, input_], dim=1)
+
+
 class GeneratorSecondLayer(Module):
-    def __init__(self, input_dim, output_dim):
-        super(GeneratorSecondLayer, self).__init__()
-        self.seq = Sequential(
-            Linear(input_dim, input_dim),
-            LeakyReLU(0.2),
-            Dropout(0.5),
-            Linear(input_dim, input_dim),
-            LeakyReLU(0.2),
-            Dropout(0.5),
-            Linear(input_dim, output_dim),
-            LeakyReLU(0.2),
-            Dropout(0.5),
-        )
+    """Generator for the CTGANSynthesizer."""
+
+    def __init__(self, embedding_dim, generator_dim, data_dim):
+        super(Generator, self).__init__()
+        dim = embedding_dim
+        seq = []
+        for item in list(generator_dim):
+            seq += [Residual(dim, item)]
+            dim += item
+        seq.append(Linear(dim, data_dim))
+        self.seq = Sequential(*seq)
+
+    def forward(self, input_):
+        """Apply the Generator to the `input_`."""
+        data = self.seq(input_)
+        return data
+
     
 
 def determine_layers_disc(side, num_channels):
@@ -647,7 +668,7 @@ class StackedCTABGANSynthesizer:
         layers_D1 = determine_layers_disc(self.dside, self.num_channels)
         
         self.generator0 = Generator(layers_G0).to(self.device)
-        self.generator1 = Generator(layers_G1).to(self.device)
+        self.generator1 = GeneratorSecondLayer(embedding_dim=data_dim+self.cond_generator.n_opt, generator_dim=(256, 256),data_dim=data_dim).to(self.device)
         
         discriminator0 = Discriminator(layers_D0).to(self.device)
         discriminator1 = Discriminator(layers_D1).to(self.device)

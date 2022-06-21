@@ -682,8 +682,10 @@ class CTABGANSynthesizer:
                 c_perm = c[perm]
                 # generating synthetic data as an image
                 fake = self.generator(noisez)
+                
                 # converting it into the tabular domain as per format of the trasformed training data
                 faket = self.Gtransformer.inverse_transform(fake)
+                
                 # applying final activation on the generated data (i.e., tanh for numeric and gumbel-softmax for categorical)
                 fakeact = apply_activate(faket, self.transformer.output_info)
 
